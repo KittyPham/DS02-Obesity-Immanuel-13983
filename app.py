@@ -160,6 +160,7 @@ elif section == "Preprocessing Data":
     target_encoder = LabelEncoder()
     df['NObeyesdad'] = target_encoder.fit_transform(df['NObeyesdad'])
     label_encoders['NObeyesdad'] = target_encoder
+    st.session_state['target_encoder'] = target_encoder  # Save to session state
 
     st.subheader("Data Setelah Encoding")
     st.write(df.head())
@@ -196,6 +197,11 @@ elif section == "Preprocessing Data":
 
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.2, random_state=42)
+    st.session_state['X_train'] = X_train
+    st.session_state['X_test'] = X_test
+    st.session_state['y_train'] = y_train
+    st.session_state['y_test'] = y_test
+
     st.subheader("Pembagian Data")
     st.write(f"Jumlah Data Train: {X_train.shape}")
     st.write(f"Jumlah Data Test: {X_test.shape}")
@@ -215,21 +221,12 @@ elif section == "Preprocessing Data":
 elif section == "Pemodelan & Evaluasi":
     st.header("Pemodelan & Evaluasi")
 
-    # Simpan data yang telah diproses
-    if 'X_train' not in st.session_state:
-        X = df.drop('NObeyesdad', axis=1)
-        y = df['NObeyesdad']
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        smote = SMOTE(random_state=42)
-        X_resampled, y_resampled = smote.fit_resample(X_scaled, y)
-        X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.2, random_state=42)
-        st.session_state['X_train'] = X_train
-        st.session_state['X_test'] = X_test
-        st.session_state['y_train'] = y_train
-        st.session_state['y_test'] = y_test
-        st.session_state['target_encoder'] = target_encoder
+    # Check if required data exists
+    if 'X_train' not in st.session_state or 'target_encoder' not in st.session_state:
+        st.warning("Silakan jalankan bagian Preprocessing Data terlebih dahulu untuk mempersiapkan data.")
+        st.stop()
 
+    # Retrieve data from session state
     X_train = st.session_state['X_train']
     X_test = st.session_state['X_test']
     y_train = st.session_state['y_train']

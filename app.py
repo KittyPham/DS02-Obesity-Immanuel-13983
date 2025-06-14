@@ -109,6 +109,12 @@ elif section == "Preprocessing Data":
             imputer = SimpleImputer(strategy='median')
             df[col] = imputer.fit_transform(df[[col]])
 
+    # Verifikasi missing values setelah imputasi
+    if df.isnull().sum().sum() > 0:
+        st.error(f"Error: Terdapat {df.isnull().sum().sum()} nilai missing setelah imputasi. Periksa data.")
+        st.write(df.isnull().sum())
+        st.stop()
+
     # Hapus duplikat
     before = df.shape[0]
     df.drop_duplicates(inplace=True)
@@ -122,7 +128,7 @@ elif section == "Preprocessing Data":
     st.subheader("Boxplot Sebelum dan Sesudah Penanganan Outlier")
     num_cols = ['Age', 'Height', 'Weight']
     df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
-    y_limits = {col: (df[col].min(), df[col].max()) for col in num_cols}
+    y_limits = {col: (df[col].min(), df[col].max()) for col in num_cols if not df[col].isnull().all()}
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     for i, col in enumerate(num_cols):
@@ -140,6 +146,11 @@ elif section == "Preprocessing Data":
         upper = Q3 + 1.5 * IQR
         df = df[(df[col] >= lower) & (df[col] <= upper)]
 
+    # Verifikasi data tidak kosong setelah penghapusan outlier
+    if df.empty:
+        st.error("Error: Dataset kosong setelah penghapusan outlier. Sesuaikan batas IQR atau periksa data.")
+        st.stop()
+
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     for i, col in enumerate(num_cols):
         df[[col]].plot(kind='box', ax=axes[i])
@@ -150,7 +161,8 @@ elif section == "Preprocessing Data":
 
     # Encoding
     categorical_cols = df.select_dtypes(include='object').columns.tolist()
-    categorical_cols.remove('NObeyesdad')
+    if 'NObeyesdad' in categorical_cols:
+        categorical_cols.remove('NObeyesdad')
     label_encoders = {}
     for col in categorical_cols:
         le = LabelEncoder()
@@ -176,8 +188,24 @@ elif section == "Preprocessing Data":
     # Standarisasi dan SMOTE
     X = df.drop('NObeyesdad', axis=1)
     y = df['NObeyesdad']
+
+    # Verifikasi X dan y sebelum SMOTE
+    if X.isnull().sum().sum() > 0 or np.any(np.isinf(X)):
+        st.error("Error: X contains NaN or infinite values before SMOTE.")
+        st.write(X.isnull().sum())
+        st.stop()
+
+    if y.isnull().sum() > 0:
+        st.error("Error: y contains NaN values before SMOTE.")
+        st.stop()
+
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
+
+    # Verifikasi X_scaled
+    if np.any(np.isnan(X_scaled)) or np.any(np.isinf(X_scaled)):
+        st.error("Error: X_scaled contains NaN or infinite values after scaling.")
+        st.stop()
 
     st.subheader("Distribusi Kelas Sebelum dan Sesudah SMOTE")
     fig, ax = plt.subplots()
@@ -187,7 +215,11 @@ elif section == "Preprocessing Data":
     display_plot(fig)
 
     smote = SMOTE(random_state=42)
-    X_resampled, y_resampled = smote.fit_resample(X_scaled, y)
+    try:
+        X_resampled, y_resampled = smote.fit_resample(X_scaled, y)
+    except Exception as e:
+        st.error(f"Error during SMOTE: {str(e)}")
+        st.stop()
 
     fig, ax = plt.subplots()
     sns.countplot(x=y_resampled, order=pd.Series(y_resampled).value_counts().index)

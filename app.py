@@ -1,432 +1,159 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
+import joblib
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
-from imblearn.over_sampling import SMOTE
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, classification_report
 
-# Konfigurasi halaman Streamlit
-st.set_page_config(page_title="Obesity Data Analysis", layout="wide")
-st.title("Analisis dan Pemodelan Data Obesitas")
+# Konfigurasi halaman
+st.set_page_config(page_title="Kalkulator Obesitas", layout="wide")
 
-# Sidebar untuk navigasi
-st.sidebar.title("Navigasi")
-section = st.sidebar.radio("Pilih Bagian", ["EDA", "Preprocessing Data", "Pemodelan & Evaluasi", "Hyperparameter Tuning"])
-
-# Load dataset
-@st.cache_data
-def load_data():
-    df = pd.read_csv('ObesityDataSet.csv')
-    return df
-
-df = load_data()
-
-# Fungsi untuk menampilkan plot
-def display_plot(fig):
-    st.pyplot(fig)
-
-# EDA
-if section == "EDA":
-    st.header("Exploratory Data Analysis (EDA)")
-
-    st.subheader("Head ObesityDataSet")
-    st.write(df.head())
-
-    st.subheader("Informasi Dataset")
-    st.write(f'Jumlah baris: {df.shape[0]}, jumlah kolom: {df.shape[1]}')
-    st.write(df.info())
-
-    st.subheader("Deskripsi Statistik Fitur Numerik")
-    st.write(df.describe())
-
-    st.subheader("Missing Values per Kolom")
-    st.write(df.isnull().sum().to_frame('missing_count'))
-
-    st.subheader("Unique Values per Kolom")
-    st.write(df.nunique().to_frame('unique_count'))
-
-    st.subheader("Jumlah Baris Duplikat")
-    dup_count = df.duplicated().sum()
-    st.write(f'Jumlah baris duplikat: {dup_count}')
-
-    st.subheader("Distribusi Kelas NObeyesdad")
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.countplot(data=df, x='NObeyesdad', hue='NObeyesdad', order=df['NObeyesdad'].value_counts().index, palette='Set2', legend=False)
-    plt.xticks(rotation=45)
-    plt.title('Distribusi Kelas NObeyesdad')
-    plt.xlabel('Kelas')
-    plt.ylabel('Jumlah')
-    plt.tight_layout()
-    display_plot(fig)
-
-    st.subheader("Boxplot untuk Deteksi Outlier")
-    num_cols = ['Age', 'Height', 'Weight']
-    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
-    fig, ax = plt.subplots(figsize=(15, 5))
-    df[num_cols].plot(kind='box', subplots=True, layout=(1, 3), ax=ax)
-    plt.tight_layout()
-    display_plot(fig)
-
-    st.subheader("Kesimpulan EDA")
-    st.markdown("""
-    - Dataset memiliki 2111 baris dan 17 kolom.
-    - Terdapat 14 kolom bertipe object dan sisanya numerik.
-    - Ditemukan missing values, unique values, dan data duplikat.
-    - Distribusi kelas target tidak seimbang.
-    - Terdapat outlier pada kolom numerik.
-    """)
-
-# Preprocessing Data
-elif section == "Preprocessing Data":
-    st.header("Preprocessing Data")
-
-    # Ganti '?' menjadi NaN
-    df.replace('?', np.nan, inplace=True)
-
-    # Konversi kolom numerik
-    numerical_columns = ['Age', 'Height', 'Weight', 'FCVC', 'NCP', 'CH2O', 'FAF', 'TUE']
-    for col in numerical_columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    # Imputasi missing values
-    categorical_cols = df.select_dtypes(include='object').columns.tolist()
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-
-    for col in categorical_cols:
-        if df[col].isnull().sum() > 0:
-            imputer = SimpleImputer(strategy='most_frequent')
-            df[col] = imputer.fit_transform(df[[col]]).ravel()
-
-    for col in numeric_cols:
-        if df[col].isnull().sum() > 0:
-            imputer = SimpleImputer(strategy='median')
-            df[col] = imputer.fit_transform(df[[col]])
-
-    # Verifikasi missing values setelah imputasi
-    if df.isnull().sum().sum() > 0:
-        st.error(f"Error: Terdapat {df.isnull().sum().sum()} nilai missing setelah imputasi. Periksa data.")
-        st.write(df.isnull().sum())
-        st.stop()
-
-    # Hapus duplikat
-    before = df.shape[0]
-    df.drop_duplicates(inplace=True)
-    after = df.shape[0]
-    st.subheader("Penghapusan Duplikat")
-    st.write(f"Jumlah data sebelum hapus duplikat: {before}")
-    st.write(f"Jumlah data setelah hapus duplikat: {after}")
-    st.write(f"Jumlah data duplikat yang dihapus: {before - after}")
-
-    # Penanganan outlier
-    st.subheader("Boxplot Sebelum dan Sesudah Penanganan Outlier")
-    num_cols = ['Age', 'Height', 'Weight']
-    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
-    y_limits = {col: (df[col].min(), df[col].max()) for col in num_cols if not df[col].isnull().all()}
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    for i, col in enumerate(num_cols):
-        df[[col]].plot(kind='box', ax=axes[i])
-        axes[i].set_title(f"{col} (sebelum)")
-        axes[i].set_ylim(y_limits[col])
-    plt.tight_layout()
-    display_plot(fig)
-
-    for col in num_cols:
-        Q1 = df[col].quantile(0.25)
-        Q3 = df[col].quantile(0.75)
-        IQR = Q3 - Q1
-        lower = Q1 - 1.5 * IQR
-        upper = Q3 + 1.5 * IQR
-        df = df[(df[col] >= lower) & (df[col] <= upper)]
-
-    # Verifikasi data tidak kosong setelah penghapusan outlier
-    if df.empty:
-        st.error("Error: Dataset kosong setelah penghapusan outlier. Sesuaikan batas IQR atau periksa data.")
-        st.stop()
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    for i, col in enumerate(num_cols):
-        df[[col]].plot(kind='box', ax=axes[i])
-        axes[i].set_title(f"{col} (setelah)")
-        axes[i].set_ylim(y_limits[col])
-    plt.tight_layout()
-    display_plot(fig)
-
-    # Encoding
-    categorical_cols = df.select_dtypes(include='object').columns.tolist()
-    if 'NObeyesdad' in categorical_cols:
-        categorical_cols.remove('NObeyesdad')
-    label_encoders = {}
-    for col in categorical_cols:
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col])
-        label_encoders[col] = le
-
-    target_encoder = LabelEncoder()
-    df['NObeyesdad'] = target_encoder.fit_transform(df['NObeyesdad'])
-    label_encoders['NObeyesdad'] = target_encoder
-    st.session_state['target_encoder'] = target_encoder  # Save to session state
-
-    st.subheader("Data Setelah Encoding")
-    st.write(df.head())
-
-    # Heatmap korelasi
-    st.subheader("Heatmap Korelasi")
-    fig, ax = plt.subplots(figsize=(16, 12))
-    sns.heatmap(df.corr(), annot=True, fmt=".2f", cmap='magma', linewidths=0.5, cbar_kws={"shrink": 0.8})
-    plt.title("Heatmap Korelasi antar Fitur")
-    plt.tight_layout()
-    display_plot(fig)
-
-    # Standarisasi dan SMOTE
-    X = df.drop('NObeyesdad', axis=1)
-    y = df['NObeyesdad']
-
-    # Verifikasi X dan y sebelum SMOTE
-    if X.isnull().sum().sum() > 0 or np.any(np.isinf(X)):
-        st.error("Error: X contains NaN or infinite values before SMOTE.")
-        st.write(X.isnull().sum())
-        st.stop()
-
-    if y.isnull().sum() > 0:
-        st.error("Error: y contains NaN values before SMOTE.")
-        st.stop()
-
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    # Verifikasi X_scaled
-    if np.any(np.isnan(X_scaled)) or np.any(np.isinf(X_scaled)):
-        st.error("Error: X_scaled contains NaN or infinite values after scaling.")
-        st.stop()
-
-    st.subheader("Distribusi Kelas Sebelum dan Sesudah SMOTE")
-    fig, ax = plt.subplots()
-    sns.countplot(x=y, order=pd.Series(y).value_counts().index)
-    plt.title("Distribusi Kelas Sebelum SMOTE")
-    plt.xticks(rotation=45)
-    display_plot(fig)
-
-    smote = SMOTE(random_state=42)
-    try:
-        X_resampled, y_resampled = smote.fit_resample(X_scaled, y)
-    except Exception as e:
-        st.error(f"Error during SMOTE: {str(e)}")
-        st.stop()
-
-    fig, ax = plt.subplots()
-    sns.countplot(x=y_resampled, order=pd.Series(y_resampled).value_counts().index)
-    plt.title("Distribusi Kelas Setelah SMOTE")
-    plt.xticks(rotation=45)
-    display_plot(fig)
-
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.2, random_state=42)
-    st.session_state['X_train'] = X_train
-    st.session_state['X_test'] = X_test
-    st.session_state['y_train'] = y_train
-    st.session_state['y_test'] = y_test
-
-    st.subheader("Pembagian Data")
-    st.write(f"Jumlah Data Train: {X_train.shape}")
-    st.write(f"Jumlah Data Test: {X_test.shape}")
-
-    st.subheader("Kesimpulan Preprocessing")
-    st.markdown("""
-    - Missing values diatasi dengan modus untuk kategorikal dan median untuk numerik.
-    - Data duplikat dihapus.
-    - Outlier ditangani menggunakan metode IQR.
-    - Fitur kategorikal diencode menggunakan Label Encoding.
-    - Data dinormalisasi dengan StandardScaler.
-    - Ketidakseimbangan kelas ditangani dengan SMOTE.
-    - Data dibagi menjadi 80% train dan 20% test.
-    """)
-
-# Pemodelan & Evaluasi
-elif section == "Pemodelan & Evaluasi":
-    st.header("Pemodelan & Evaluasi")
-
-    # Check if required data exists
-    if 'X_train' not in st.session_state or 'target_encoder' not in st.session_state:
-        st.warning("Silakan jalankan bagian Preprocessing Data terlebih dahulu untuk mempersiapkan data.")
-        st.stop()
-
-    # Retrieve data from session state
-    X_train = st.session_state['X_train']
-    X_test = st.session_state['X_test']
-    y_train = st.session_state['y_train']
-    y_test = st.session_state['y_test']
-    target_encoder = st.session_state['target_encoder']
-
-    models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
-        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
-        "SVM": SVC(kernel='rbf', probability=True, random_state=42)
+# Gaya CSS kustom untuk antarmuka yang elegan
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #ffffff;
+        color: #2d3436;
     }
+    h1 {
+        color: #0984e3;
+        text-align: center;
+        font-size: 2.8em;
+        font-family: Arial, sans-serif;
+    }
+    .stButton > button {
+        background-color: #0984e3;
+        color: white;
+        border-radius: 12px;
+        padding: 15px 30px;
+        font-size: 1.1em;
+    }
+    .stButton > button:hover {
+        background-color: #0652dd;
+    }
+    .stTextInput, .stSelectbox, .stNumberInput {
+        margin-bottom: 15px;
+    }
+    .sidebar .sidebar-content {
+        background-color: #dfe6e9;
+        padding: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    results = {}
-    for model_name, model in models.items():
-        st.subheader(f"Hasil Evaluasi: {model_name}")
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
+# Fungsi untuk memuat dan memproses data
+def initialize_data(file_path):
+    try:
+        data = pd.read_csv(file_path)
+        target_col = 'NObeyesdad'
+        X = data.drop(columns=[target_col])
+        y = data[target_col]
+        
+        # Encoding kategori
+        cat_columns = X.select_dtypes(include=['object']).columns
+        encoders = {col: LabelEncoder().fit(X[col]) for col in cat_columns}
+        target_enc = LabelEncoder().fit(y)
+        return X, encoders, target_enc, cat_columns
+    except Exception as e:
+        st.error(f"Error memuat dataset: {e}")
+        st.stop()
 
-        acc = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-        rec = recall_score(y_test, y_pred, average='weighted')
-        f1 = f1_score(y_test, y_pred, average='weighted')
+# Memuat data dan model
+DATA_FILE = 'ObesityDataSet.csv'
+X_data, cat_encoders, target_enc, cat_cols = initialize_data(DATA_FILE)
 
-        results[model_name] = {
-            "Accuracy": acc,
-            "Precision": prec,
-            "Recall": rec,
-            "F1 Score": f1,
-            "y_pred": y_pred
-        }
+MODEL_FILES = {
+    'Regresi Logistik': 'best_logistic_regression_model.joblib',
+    'Hutan Acak': 'best_random_forest_model.joblib',
+    'Mesin Vektor': 'best_svm_model.joblib'
+}
+loaded_models = {}
+for model_name, file in MODEL_FILES.items():
+    try:
+        loaded_models[model_name] = joblib.load(file)
+    except FileNotFoundError:
+        st.error(f"Model {file} tidak ditemukan!")
+        st.stop()
 
-        st.write(classification_report(y_test, y_pred, target_names=target_encoder.classes_))
+try:
+    feature_scaler = joblib.load('scaler.joblib')
+except FileNotFoundError:
+    st.error("Scaler tidak ditemukan!")
+    st.stop()
 
-        fig, ax = plt.subplots(figsize=(8, 6))
-        cm = confusion_matrix(y_test, y_pred)
-        sns.heatmap(cm, annot=True, fmt='d', cmap='viridis',
-                    xticklabels=target_encoder.classes_,
-                    yticklabels=target_encoder.classes_)
-        plt.title(f"Confusion Matrix – {model_name}")
-        plt.xlabel("Predicted Label")
-        plt.ylabel("True Label")
-        plt.tight_layout()
-        display_plot(fig)
+# Antarmuka pengguna
+st.title("✨ Kalkulator Tingkat Obesitas ✨")
 
-    results_df = pd.DataFrame(results).T[['Accuracy', 'Precision', 'Recall', 'F1 Score']]
-    st.subheader("Tabel Hasil Evaluasi Model")
-    st.write(results_df)
+# Sidebar untuk pemilihan model
+with st.sidebar:
+    st.markdown("### Pilih Algoritma")
+    selected_model = st.selectbox("", list(loaded_models.keys()))
 
-    st.subheader("Perbandingan Performa Model")
-    fig, ax = plt.subplots(figsize=(12, 6))
-    results_df.plot(kind='bar', ax=ax, color=sns.color_palette("coolwarm", n_colors=4))
-    for container in ax.containers:
-        ax.bar_label(container, fmt='%.2f', label_type='edge', padding=3)
-    plt.title("Perbandingan Performa Model (Tanpa Tuning)")
-    plt.ylabel("Skor")
-    plt.ylim(0, 1.05)
-    plt.xticks(rotation=0)
-    plt.legend(loc='lower right')
-    plt.grid(axis='y')
-    plt.tight_layout()
-    display_plot(fig)
+# Form input
+st.markdown("### Data Pengguna")
+with st.form(key='user_input'):
+    col_left, col_right = st.columns(2)
+    
+    with col_left:
+        st.markdown("#### Profil")
+        sex = st.selectbox("Jenis Kelamin", ["Pria", "Wanita"])
+        user_age = st.number_input("Umur", min_value=0, max_value=150, value=30)
+        user_height = st.number_input("Tinggi (m)", min_value=0.5, max_value=2.5, value=1.65, step=0.01)
+        user_weight = st.number_input("Berat (kg)", min_value=10.0, max_value=200.0, value=65.0, step=0.1)
+        
+        st.markdown("#### Pola Makan")
+        family_obesity = st.selectbox("Riwayat Obesitas Keluarga", ["Ya", "Tidak"])
+        high_cal_food = st.selectbox("Suka Makanan Berkalori Tinggi", ["Ya", "Tidak"])
+        veg_freq = st.number_input("Frekuensi Sayuran (1-3)", min_value=1.0, max_value=3.0, value=2.0, step=0.1)
+        meals_per_day = st.number_input("Jumlah Makan/Hari", min_value=1.0, max_value=5.0, value=3.0, step=0.1)
+        snacking = st.selectbox("Ngemil", ["Tidak", "Kadang", "Sering", "Selalu"])
 
-    st.subheader("Kesimpulan Pemodelan & Evaluasi")
-    st.markdown("""
-    - Pemodelan menggunakan Logistic Regression, Random Forest, dan SVM.
-    - Random Forest memiliki performa terbaik, diikuti Logistic Regression dan SVM.
-    """)
+    with col_right:
+        st.markdown("#### Aktivitas")
+        smoking = st.selectbox("Merokok", ["Ya", "Tidak"])
+        water_intake = st.number_input("Minum Air (liter)", min_value=0.0, max_value=5.0, value=2.0, step=0.1)
+        calorie_monitor = st.selectbox("Pantau Kalori", ["Ya", "Tidak"])
+        exercise_freq = st.number_input("Olahraga (hari/minggu)", min_value=0.0, max_value=7.0, value=2.0, step=0.1)
+        screen_time = st.number_input("Waktu Layar (jam)", min_value=0.0, max_value=24.0, value=3.0, step=0.1)
+        alcohol = st.selectbox("Alkohol", ["Tidak", "Kadang", "Sering", "Selalu"])
+        transport = st.selectbox("Transportasi", ["Mobil", "Motor", "Sepeda", "Transportasi Umum", "Jalan Kaki"])
 
-# Hyperparameter Tuning
-elif section == "Hyperparameter Tuning":
-    st.header("Hyperparameter Tuning")
+    predict_button = st.form_submit_button("Hitung")
 
-    X_train = st.session_state.get('X_train')
-    X_test = st.session_state.get('X_test')
-    y_train = st.session_state.get('y_train')
-    y_test = st.session_state.get('y_test')
-    target_encoder = st.session_state.get('target_encoder')
-
-    if X_train is None:
-        st.warning("Silakan jalankan bagian Preprocessing Data dan Pemodelan terlebih dahulu.")
+# Logika prediksi
+if predict_button:
+    if user_age < 0 or user_height <= 0 or user_weight <= 0:
+        st.error("Masukkan data yang valid (nilai positif)!")
     else:
-        param_grid = {
-            'Logistic Regression': {
-                'C': [0.01, 0.1, 1, 10, 100],
-                'penalty': ['l2'],
-                'solver': ['lbfgs']
-            },
-            'Random Forest': {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [None, 10, 20],
-                'min_samples_split': [2, 5]
-            },
-            'SVM': {
-                'C': [0.1, 1, 10],
-                'kernel': ['linear', 'rbf'],
-                'gamma': ['scale', 'auto']
-            }
+        input_dict = {
+            'Gender': "Male" if sex == "Pria" else "Female",
+            'Age': user_age, 'Height': user_height, 'Weight': user_weight,
+            'family_history_with_overweight': "yes" if family_obesity == "Ya" else "no",
+            'FAVC': "yes" if high_cal_food == "Ya" else "no",
+            'FCVC': veg_freq, 'NCP': meals_per_day, 'CAEC': snacking.lower().capitalize(),
+            'SMOKE': "yes" if smoking == "Ya" else "no", 'CH2O': water_intake,
+            'SCC': "yes" if calorie_monitor == "Ya" else "no", 'FAF': exercise_freq,
+            'TUE': screen_time, 'CALC': alcohol.lower().capitalize(), 'MTRANS': transport
         }
+        input_frame = pd.DataFrame([input_dict])
+        
+        # Transformasi data
+        for col in cat_cols:
+            input_frame[col] = cat_encoders[col].transform(input_frame[col])
+        num_cols = [col for col in X_data.columns if col not in cat_cols]
+        input_frame[num_cols] = feature_scaler.transform(input_frame[num_cols])
+        
+        # Prediksi
+        chosen_model = loaded_models[selected_model]
+        pred = chosen_model.predict(input_frame)
+        outcome = target_enc.inverse_transform(pred)[0]
+        
+        st.markdown(f"### Hasil: **{outcome}** (dengan {selected_model})")
 
-        base_models = {
-            'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
-            'Random Forest': RandomForestClassifier(random_state=42),
-            'SVM': SVC(random_state=42)
-        }
-
-        tuned_results = {}
-        for name in base_models:
-            st.subheader(f"Tuning Model: {name}")
-            grid = GridSearchCV(
-                base_models[name],
-                param_grid[name],
-                cv=5,
-                scoring='f1_weighted',
-                n_jobs=-1
-            )
-            grid.fit(X_train, y_train)
-            best_model = grid.best_estimator_
-
-            y_pred = best_model.predict(X_test)
-            acc = accuracy_score(y_test, y_pred)
-            prec = precision_score(y_test, y_pred, average='weighted')
-            rec = recall_score(y_test, y_pred, average='weighted')
-            f1 = f1_score(y_test, y_pred, average='weighted')
-
-            tuned_results[name] = {
-                "Accuracy": acc,
-                "Precision": prec,
-                "Recall": rec,
-                "F1 Score": f1,
-                "y_pred": y_pred
-            }
-
-            st.write(f"Best Params: {grid.best_params_}")
-            st.write(classification_report(y_test, y_pred, target_names=target_encoder.classes_))
-
-            fig, ax = plt.subplots(figsize=(8, 6))
-            cm = confusion_matrix(y_test, y_pred)
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                        xticklabels=target_encoder.classes_,
-                        yticklabels=target_encoder.classes_)
-            plt.title(f"Confusion Matrix (Setelah Tuning) - {name}")
-            plt.xlabel("Predicted Label")
-            plt.ylabel("True Label")
-            plt.tight_layout()
-            display_plot(fig)
-
-        results_df = pd.DataFrame(tuned_results).T[['Accuracy', 'Precision', 'Recall', 'F1 Score']]
-        st.subheader("Tabel Hasil Evaluasi Model (Setelah Tuning)")
-        st.write(results_df)
-
-        st.subheader("Perbandingan Performa Model (Setelah Tuning)")
-        fig, ax = plt.subplots(figsize=(12, 6))
-        results_df.plot(kind='bar', ax=ax, color=sns.color_palette("coolwarm", n_colors=4))
-        for container in ax.containers:
-            ax.bar_label(container, fmt='%.2f', label_type='edge', padding=3)
-        plt.title("Perbandingan Performa Model (Setelah Hyperparameter Tuning)")
-        plt.ylabel("Skor")
-        plt.ylim(0, 1.05)
-        plt.xticks(rotation=0)
-        plt.legend(loc='lower right')
-        plt.grid(axis='y')
-        plt.tight_layout()
-        display_plot(fig)
-
-        st.subheader("Kesimpulan Hyperparameter Tuning")
-        st.markdown("""
-        - Hyperparameter tuning meningkatkan performa ketiga model.
-        - Logistic Regression meningkat signifikan (misalnya, dari 86% ke 93%).
-        - Random Forest tetap menjadi model terbaik.
-        - SVM juga menunjukkan peningkatan performa.
-        """)
+# Petunjuk penggunaan
+st.markdown("""
+#### Petunjuk:
+1. Simpan sebagai `app.py`.
+2. Pastikan `ObesityDataSet.csv`, `scaler.joblib`, dan file model ada di folder yang sama.
+3. Install: `pip install streamlit pandas scikit-learn joblib`.
+4. Jalankan: `streamlit run app.py`.
+5. Akses: `http://localhost:8501`.
+""")

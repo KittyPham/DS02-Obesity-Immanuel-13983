@@ -3,157 +3,151 @@ import pandas as pd
 import joblib
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-# Konfigurasi halaman
-st.set_page_config(page_title="Kalkulator Obesitas", layout="wide")
+# Konfigurasi halaman Streamlit
+st.set_page_config(page_title="Prediksi Tingkat Obesitas", layout="wide")
 
-# Gaya CSS kustom untuk antarmuka yang elegan
+# CSS Kustom untuk tampilan UI
 st.markdown("""
 <style>
     .stApp {
-        background-color: #ffffff;
-        color: #2d3436;
+        background-color: #f0f2f6;
+        color: #333333;
     }
     h1 {
-        color: #0984e3;
+        color: #2c3e50;
         text-align: center;
-        font-size: 2.8em;
-        font-family: Arial, sans-serif;
+        font-size: 2.5em;
     }
     .stButton > button {
-        background-color: #0984e3;
+        background-color: #3498db;
         color: white;
-        border-radius: 12px;
-        padding: 15px 30px;
-        font-size: 1.1em;
+        border-radius: 8px;
+        padding: 10px 20px;
     }
     .stButton > button:hover {
-        background-color: #0652dd;
-    }
-    .stTextInput, .stSelectbox, .stNumberInput {
-        margin-bottom: 15px;
-    }
-    .sidebar .sidebar-content {
-        background-color: #dfe6e9;
-        padding: 10px;
+        background-color: #2980b9;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Fungsi untuk memuat dan memproses data
-def initialize_data(file_path):
-    try:
-        data = pd.read_csv(file_path)
-        target_col = 'NObeyesdad'
-        X = data.drop(columns=[target_col])
-        y = data[target_col]
-        
-        # Encoding kategori
-        cat_columns = X.select_dtypes(include=['object']).columns
-        encoders = {col: LabelEncoder().fit(X[col]) for col in cat_columns}
-        target_enc = LabelEncoder().fit(y)
-        return X, encoders, target_enc, cat_columns
-    except Exception as e:
-        st.error(f"Error memuat dataset: {e}")
-        st.stop()
+# Memuat dataset untuk mendapatkan encoder dan scaler
+data_path = 'ObesityDataSet.csv'  # Sesuaikan dengan path dataset Anda
+df = pd.read_csv(data_path)
+target_column = 'NObeyesdad'
+features = df.drop(columns=[target_column])
+target = df[target_column]
 
-# Memuat data dan model
-DATA_FILE = 'ObesityDataSet.csv'
-X_data, cat_encoders, target_enc, cat_cols = initialize_data(DATA_FILE)
+# Encoder untuk fitur kategorikal
+categorical_cols = features.select_dtypes(include=['object']).columns
+label_encoders = {}
+for col in categorical_cols:
+    le = LabelEncoder()
+    features[col] = le.fit_transform(features[col])
+    label_encoders[col] = le
 
-MODEL_FILES = {
-    'Regresi Logistik': 'best_logistic_regression_model.joblib',
-    'Hutan Acak': 'best_random_forest_model.joblib',
-    'Mesin Vektor': 'best_svm_model.joblib'
+# Encoder untuk target
+target_encoder = LabelEncoder()
+target_encoder.fit(target)
+
+# Memuat model yang telah dilatih dari file .joblib
+model_paths = {
+    'Logistic Regression': 'best_logistic_regression_model.joblib',
+    'Random Forest': 'best_random_forest_model.joblib',
+    'SVM': 'best_svm_model.joblib'
 }
-loaded_models = {}
-for model_name, file in MODEL_FILES.items():
+models = {}
+for name, path in model_paths.items():
     try:
-        loaded_models[model_name] = joblib.load(file)
+        models[name] = joblib.load(path)
     except FileNotFoundError:
-        st.error(f"Model {file} tidak ditemukan!")
+        st.error(f"File model {path} tidak ditemukan. Pastikan file ada di direktori yang sama dengan app.py.")
         st.stop()
 
+# Memuat scaler
 try:
-    feature_scaler = joblib.load('scaler.joblib')
+    scaler = joblib.load('scaler.joblib')
 except FileNotFoundError:
-    st.error("Scaler tidak ditemukan!")
+    st.error("File scaler.joblib tidak ditemukan. Pastikan file ada di direktori yang sama dengan app.py.")
     st.stop()
 
-# Antarmuka pengguna
-st.title("✨ Kalkulator Tingkat Obesitas ✨")
+# UI Streamlit
+st.title("Aplikasi Prediksi Tingkat Obesitas")
 
-# Sidebar untuk pemilihan model
-with st.sidebar:
-    st.markdown("### Pilih Algoritma")
-    selected_model = st.selectbox("", list(loaded_models.keys()))
+# Pilihan model
+model_name = st.selectbox("Pilih Model untuk Prediksi", list(models.keys()))
 
-# Form input
-st.markdown("### Data Pengguna")
-with st.form(key='user_input'):
-    col_left, col_right = st.columns(2)
+# Form input pengguna
+st.header("Masukkan Data Anda")
+with st.form("input_form"):
+    col1, col2, col3 = st.columns(3)
     
-    with col_left:
-        st.markdown("#### Profil")
-        sex = st.selectbox("Jenis Kelamin", ["Pria", "Wanita"])
-        user_age = st.number_input("Umur", min_value=0, max_value=150, value=30)
-        user_height = st.number_input("Tinggi (m)", min_value=0.5, max_value=2.5, value=1.65, step=0.01)
-        user_weight = st.number_input("Berat (kg)", min_value=10.0, max_value=200.0, value=65.0, step=0.1)
-        
-        st.markdown("#### Pola Makan")
-        family_obesity = st.selectbox("Riwayat Obesitas Keluarga", ["Ya", "Tidak"])
-        high_cal_food = st.selectbox("Suka Makanan Berkalori Tinggi", ["Ya", "Tidak"])
-        veg_freq = st.number_input("Frekuensi Sayuran (1-3)", min_value=1.0, max_value=3.0, value=2.0, step=0.1)
-        meals_per_day = st.number_input("Jumlah Makan/Hari", min_value=1.0, max_value=5.0, value=3.0, step=0.1)
-        snacking = st.selectbox("Ngemil", ["Tidak", "Kadang", "Sering", "Selalu"])
+    # Kolom 1: Informasi Pribadi
+    with col1:
+        gender = st.selectbox("Jenis Kelamin", ["Male", "Female"])
+        age = st.number_input("Usia (tahun)", min_value=0, max_value=120, value=25)
+        height = st.number_input("Tinggi Badan (m)", min_value=0.5, max_value=2.5, value=1.7, step=0.01)
+        weight = st.number_input("Berat Badan (kg)", min_value=10.0, max_value=300.0, value=70.0, step=0.1)
+    
+    # Kolom 2: Kebiasaan Makan
+    with col2:
+        family_history = st.selectbox("Riwayat Keluarga Obesitas", ["yes", "no"])
+        favc = st.selectbox("Sering Makanan Tinggi Kalori", ["yes", "no"])
+        fcvc = st.number_input("Frekuensi Konsumsi Sayuran (1-3)", min_value=1.0, max_value=3.0, value=2.0, step=0.1)
+        ncp = st.number_input("Jumlah Makanan Utama/Hari", min_value=1.0, max_value=5.0, value=3.0, step=0.1)
+        caec = st.selectbox("Makanan Antar Waktu", ["no", "Sometimes", "Frequently", "Always"])
+    
+    # Kolom 3: Gaya Hidup
+    with col3:
+        smoke = st.selectbox("Merokok", ["yes", "no"])
+        ch2o = st.number_input("Konsumsi Air (liter)", min_value=0.0, max_value=3.0, value=2.0, step=0.1)
+        scc = st.selectbox("Pantau Kalori", ["yes", "no"])
+        faf = st.number_input("Aktivitas Fisik (hari/minggu)", min_value=0.0, max_value=7.0, value=1.0, step=0.1)
+        tue = st.number_input("Waktu Elektronik (jam/hari)", min_value=0.0, max_value=24.0, value=1.0, step=0.1)
+        calc = st.selectbox("Konsumsi Alkohol", ["no", "Sometimes", "Frequently", "Always"])
+        mtrans = st.selectbox("Transportasi", ["Automobile", "Motorbike", "Bike", "Public_Transportation", "Walking"])
 
-    with col_right:
-        st.markdown("#### Aktivitas")
-        smoking = st.selectbox("Merokok", ["Ya", "Tidak"])
-        water_intake = st.number_input("Minum Air (liter)", min_value=0.0, max_value=5.0, value=2.0, step=0.1)
-        calorie_monitor = st.selectbox("Pantau Kalori", ["Ya", "Tidak"])
-        exercise_freq = st.number_input("Olahraga (hari/minggu)", min_value=0.0, max_value=7.0, value=2.0, step=0.1)
-        screen_time = st.number_input("Waktu Layar (jam)", min_value=0.0, max_value=24.0, value=3.0, step=0.1)
-        alcohol = st.selectbox("Alkohol", ["Tidak", "Kadang", "Sering", "Selalu"])
-        transport = st.selectbox("Transportasi", ["Mobil", "Motor", "Sepeda", "Transportasi Umum", "Jalan Kaki"])
+    submit = st.form_submit_button("Prediksi")
 
-    predict_button = st.form_submit_button("Hitung")
+# Proses prediksi
+if submit:
+    # Membuat DataFrame dari input
+    input_data = {
+        'Gender': gender, 'Age': age, 'Height': height, 'Weight': weight,
+        'family_history_with_overweight': family_history, 'FAVC': favc,
+        'FCVC': fcvc, 'NCP': ncp, 'CAEC': caec, 'SMOKE': smoke,
+        'CH2O': ch2o, 'SCC': scc, 'FAF': faf, 'TUE': tue,
+        'CALC': calc, 'MTRANS': mtrans
+    }
+    input_df = pd.DataFrame([input_data])
 
-# Logika prediksi
-if predict_button:
-    if user_age < 0 or user_height <= 0 or user_weight <= 0:
-        st.error("Masukkan data yang valid (nilai positif)!")
-    else:
-        input_dict = {
-            'Gender': "Male" if sex == "Pria" else "Female",
-            'Age': user_age, 'Height': user_height, 'Weight': user_weight,
-            'family_history_with_overweight': "yes" if family_obesity == "Ya" else "no",
-            'FAVC': "yes" if high_cal_food == "Ya" else "no",
-            'FCVC': veg_freq, 'NCP': meals_per_day, 'CAEC': snacking.lower().capitalize(),
-            'SMOKE': "yes" if smoking == "Ya" else "no", 'CH2O': water_intake,
-            'SCC': "yes" if calorie_monitor == "Ya" else "no", 'FAF': exercise_freq,
-            'TUE': screen_time, 'CALC': alcohol.lower().capitalize(), 'MTRANS': transport
-        }
-        input_frame = pd.DataFrame([input_dict])
-        
-        # Transformasi data
-        for col in cat_cols:
-            input_frame[col] = cat_encoders[col].transform(input_frame[col])
-        num_cols = [col for col in X_data.columns if col not in cat_cols]
-        input_frame[num_cols] = feature_scaler.transform(input_frame[num_cols])
-        
-        # Prediksi
-        chosen_model = loaded_models[selected_model]
-        pred = chosen_model.predict(input_frame)
-        outcome = target_enc.inverse_transform(pred)[0]
-        
-        st.markdown(f"### Hasil: **{outcome}** (dengan {selected_model})")
+    # Encoding fitur kategorikal
+    for col in categorical_cols:
+        input_df[col] = label_encoders[col].transform(input_df[col])
 
-# Petunjuk penggunaan
+    # Scaling fitur numerik
+    numerical_cols = [col for col in features.columns if col not in categorical_cols]
+    input_df[numerical_cols] = scaler.transform(input_df[numerical_cols])
+
+    # Prediksi menggunakan model yang dipilih
+    model = models[model_name]
+    prediction = model.predict(input_df)
+    result = target_encoder.inverse_transform(prediction)[0]
+
+    # Menampilkan hasil
+    st.success(f"Hasil Prediksi dengan {model_name}: **{result}**")
+
+# Instruksi menjalankan aplikasi
 st.markdown("""
-#### Petunjuk:
-1. Simpan sebagai `app.py`.
-2. Pastikan `ObesityDataSet.csv`, `scaler.joblib`, dan file model ada di folder yang sama.
-3. Install: `pip install streamlit pandas scikit-learn joblib`.
-4. Jalankan: `streamlit run app.py`.
-5. Akses: `http://localhost:8501`.
+### Cara Menjalankan Aplikasi:
+1. Simpan kode ini sebagai `app.py`.
+2. Pastikan file `ObesityDataSet.csv`, `scaler.joblib`, dan ketiga file model `.joblib` ada di direktori yang sama.
+3. Install dependensi:
+   ```bash
+   pip install streamlit pandas scikit-learn joblib
+   ```
+4. Jalankan aplikasi:
+   ```bash
+   streamlit run app.py
+   ```
+5. Buka browser di `http://localhost:8501`.
 """)

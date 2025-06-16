@@ -226,7 +226,7 @@ def run_text_classification():
     # Mendefinisikan path ke file dataset ObesityDataSet.csv.
     # os.path.dirname(__file__) mendapatkan direktori script saat ini,
     # os.path.join menggabungkan path secara aman lintas sistem operasi.
-    data_path = os.path.join(os.path.dirname(__file__), "data", "ObesityDataSet.csv")
+    data_path = os.path.join(os.path.dirname(__file__),"ObesityDataSet.csv")
 
     # Memuat dan pra-memproses data sekali untuk mendapatkan encoder dan scaler yang sudah dilatih.
     # Ini penting agar input pengguna baru dapat diproses dengan cara yang sama seperti data pelatihan.
